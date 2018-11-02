@@ -148,18 +148,13 @@ thook.use(`/${tpath}`, async (req, res) => {
     updates = [updates];
   }
 
-  return bot.handleUpdates(updates, res)
-    .then(() => {
-      if (!res.finished) {
-        return res.end();
-      }
-      return Promise.resolve(res);
-    })
-    .catch((err) => {
-      console.error('Webhook error', err);
-      res.writeHead(500);
-      return res.end();
-    });
+  try {
+    await bot.handleUpdates(updates, res)
+    !res.finished && res.end();
+  } catch (e) {
+    res.writeHead(500);
+    return res.end();
+  }
 });
 exports.thook = functions.https.onRequest(thook);
 bot.telegram.setWebhook(`https://us-central1-${process.env.GCLOUD_PROJECT}.cloudfunctions.net/thook/${tpath}`);
@@ -250,31 +245,29 @@ bot.on('photo', (ctx) => {
   }
 });
 
-bot.hears(/db/, (ctx) => {
+bot.hears(/db/, async (ctx) => {
 
   const settings = {/* your settings... */ timestampsInSnapshots: true};
   db.settings(settings);
 
   let dailyMenuReference = db.collection('dailyMenu');
-  dailyMenuReference.where('isAvailable', '==', true).get()
-  .then((snapshot, err) => {
-    if (err) throw err;
+  
+  try {
+    const snapshot = await dailyMenuReference.where('isAvailable', '==', true).get();
     return ctx.reply(snapshot.join('\n'));
-  })
-  .catch(err => {
-    console.log('Error getting documents', err);
-  });
+  } catch (err) {
+    console.error('Error getting documents', err);
+  }
 });
 
-bot.hears(/count/, (ctx) => {
+bot.hears(/count/, async (ctx) => {
 
   if (isAdminBot(ctx.from.id)) {
-
     const dateFormat = require('dateformat');
     const date = dateFormat('yyyy-mm-dd');
 
-    db.collection('paymentsTransactions').doc(date).collection('PaymentGatewayProviderID').get()
-    .then(snapshot => {
+    try {
+      const snapshot = await sdb.collection('paymentsTransactions').doc(date).collection('PaymentGatewayProviderID').get()
 
       let countObj = { A: 0, B: 0, C: 0, D: 0, E: 0, F: 0 };
       snapshot.forEach(product => {
@@ -289,11 +282,10 @@ bot.hears(/count/, (ctx) => {
       return ctx.reply(
         Object.keys(countObj).map((k) => `(${k}) ${countObj[k]}\n`).join('') +
         `Totale ordini: ${snapshot.size}`
-      );
-    })
-    .catch(err => {
-      console.log('Error getting documents', err);
-    });
+      );      
+    } catch (err) {
+      console.error('Error getting documents', err);
+    }
 
   } else {
     ctx.reply('Sorry, you don\'t have permissions to use this!');
